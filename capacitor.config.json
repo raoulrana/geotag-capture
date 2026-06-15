@@ -1,0 +1,9 @@
+{
+  "appId": "com.geotagcapture.app",
+  "appName": "GeoTag Capture",
+  "webDir": "www",
+  "plugins": {
+    "Geolocation": {},
+    "Camera": {}
+  }
+}

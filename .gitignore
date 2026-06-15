@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Capacitor native projects (generated)
+ios/
+android/
+
+# OS / editor
+.DS_Store
+*.log
+
+# Build output
+dist/

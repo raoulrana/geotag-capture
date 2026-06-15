@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>GeoTag Capture</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>📍 GeoTag Capture</h1>
+    <div class="topbar-right">
+      <button id="mapBtn" class="icon-btn" title="Captures map">🗺️</button>
+      <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+      <button id="historyBtn" class="icon-btn" title="Saved captures">🗂️</button>
+      <span id="status" class="status">starting…</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Live camera -->
+    <section id="cameraView" class="stage">
+      <video id="video" autoplay playsinline muted></video>
+
+      <!-- Logo watermark preview -->
+      <img id="logoOverlay" class="logo-overlay hidden" alt="" />
+
+      <!-- Live overlay preview, drawn over the video -->
+      <div id="overlay" class="overlay">
+        <div class="overlay-map"><canvas id="mapCanvas" width="120" height="120"></canvas></div>
+        <div class="overlay-text">
+          <div id="ovAddress" class="ov-address">Locating…</div>
+          <div id="ovCoords" class="ov-line"></div>
+          <div id="ovExtra" class="ov-line"></div>
+          <div id="ovTime" class="ov-line"></div>
+          <div id="ovRemark" class="ov-remark"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <input id="remark" class="remark-input" type="text" maxlength="80"
+               placeholder="Add a remark (optional)…" />
+        <div class="controls-row">
+          <button id="flipBtn" class="btn ghost" title="Switch camera">🔄</button>
+          <button id="shutter" class="shutter" title="Capture"></button>
+          <button id="locBtn" class="btn ghost" title="Refresh location">📡</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Captured result -->
+    <section id="resultView" class="stage hidden">
+      <img id="resultImg" alt="Captured geotagged photo" />
+      <div class="controls">
+        <input id="resultRemark" class="remark-input" type="text" maxlength="80"
+               placeholder="Add or edit a remark…" />
+        <input id="resultProject" class="remark-input" list="projectList" type="text"
+               maxlength="40" placeholder="Project (optional)…" />
+        <datalist id="projectList"></datalist>
+        <input id="resultTags" class="remark-input" type="text" maxlength="80"
+               placeholder="Tags, comma separated…" />
+        <div class="controls-row">
+          <button id="retakeBtn" class="btn ghost">↩ Retake</button>
+          <button id="saveBtn" class="btn primary">⬇ Save</button>
+          <button id="shareBtn" class="btn primary hidden">↗ Share</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Saved captures log -->
+    <section id="historyView" class="stage history hidden">
+      <div class="history-head">
+        <button id="historyBack" class="btn ghost">← Back</button>
+        <h2>Saved Captures</h2>
+        <div class="history-actions">
+          <select id="projectFilter" class="proj-filter"><option value="">All projects</option></select>
+          <button id="exportCsv" class="btn ghost sm">CSV</button>
+          <button id="exportGeo" class="btn ghost sm">GeoJSON</button>
+        </div>
+      </div>
+      <div id="historyGrid" class="history-grid"></div>
+      <p id="historyEmpty" class="history-empty hidden">No saved captures yet.</p>
+    </section>
+
+    <!-- Captures map -->
+    <section id="mapView" class="stage mapview hidden">
+      <div class="history-head">
+        <button id="mapBack" class="btn ghost">← Back</button>
+        <h2>Captures Map</h2>
+      </div>
+      <canvas id="capturesMap" class="captures-map"></canvas>
+      <p id="mapEmpty" class="history-empty hidden">No located captures yet.</p>
+    </section>
+
+    <!-- Settings -->
+    <section id="settingsView" class="stage settings hidden">
+      <div class="history-head">
+        <button id="settingsBack" class="btn ghost">← Back</button>
+        <h2>Settings</h2>
+      </div>
+      <div class="settings-body">
+        <div class="set-group">
+          <h3>Template</h3>
+          <div id="templateOpts" class="seg">
+            <button class="seg-btn" data-template="card">Card + map</button>
+            <button class="seg-btn" data-template="bar">Bar</button>
+            <button class="seg-btn" data-template="minimal">Minimal</button>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h3>Accent color</h3>
+          <div id="accentOpts" class="swatches">
+            <button class="swatch" data-accent="#38bdf8" style="background:#38bdf8"></button>
+            <button class="swatch" data-accent="#22c55e" style="background:#22c55e"></button>
+            <button class="swatch" data-accent="#f59e0b" style="background:#f59e0b"></button>
+            <button class="swatch" data-accent="#ef4444" style="background:#ef4444"></button>
+            <button class="swatch" data-accent="#a855f7" style="background:#a855f7"></button>
+            <button class="swatch" data-accent="#e2e8f0" style="background:#e2e8f0"></button>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h3>Fields on stamp</h3>
+          <label class="toggle"><input type="checkbox" data-field="map" /> Mini map</label>
+          <label class="toggle"><input type="checkbox" data-field="address" /> Address</label>
+          <label class="toggle"><input type="checkbox" data-field="coords" /> Coordinates</label>
+          <label class="toggle"><input type="checkbox" data-field="altSpeed" /> Altitude &amp; speed</label>
+          <label class="toggle"><input type="checkbox" data-field="weather" /> Weather</label>
+          <label class="toggle"><input type="checkbox" data-field="plusCode" /> Plus Code</label>
+          <label class="toggle"><input type="checkbox" data-field="datetime" /> Date &amp; time</label>
+          <label class="toggle"><input type="checkbox" data-field="remark" /> Remark</label>
+        </div>
+
+        <div class="set-group">
+          <h3>Logo watermark</h3>
+          <div class="logo-row">
+            <img id="logoPreview" class="logo-preview hidden" alt="logo" />
+            <label class="btn ghost sm">Upload<input id="logoInput" type="file" accept="image/*" hidden /></label>
+            <button id="logoRemove" class="btn ghost sm hidden">Remove</button>
+          </div>
+          <label class="toggle"><input type="checkbox" id="logoToggle" /> Show watermark</label>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Full-size viewer -->
+  <div id="lightbox" class="lightbox hidden">
+    <img id="lightboxImg" alt="Saved capture" />
+    <div class="lightbox-bar">
+      <button id="lbClose" class="btn ghost">Close</button>
+      <button id="lbShare" class="btn primary hidden">↗ Share</button>
+      <button id="lbDelete" class="btn danger">🗑 Delete</button>
+    </div>
+  </div>
+
+  <canvas id="captureCanvas" class="hidden"></canvas>
+  <script src="olc.js"></script>
+  <script src="exif.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

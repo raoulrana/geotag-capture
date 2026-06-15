@@ -1,0 +1,24 @@
+{
+  "name": "geotag-capture",
+  "version": "1.0.0",
+  "description": "Capture photos with a GPS, address, time and map geotag stamped on top.",
+  "private": true,
+  "scripts": {
+    "icons": "node generate-icons.js",
+    "serve": "npx serve www",
+    "sync": "cap sync",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/camera": "^6.1.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.2",
+    "@capacitor/geolocation": "^6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "exifr": "^7.1.3",
+    "open-location-code": "^1.0.3"
+  }
+}
