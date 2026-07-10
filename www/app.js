@@ -50,6 +50,7 @@ const els = {
   lbClose:     document.getElementById('lbClose'),
   lbShare:     document.getElementById('lbShare'),
   lbDelete:    document.getElementById('lbDelete'),
+  overlay:      document.getElementById('overlay'),
   settingsBtn:  document.getElementById('settingsBtn'),
   settingsView: document.getElementById('settingsView'),
   settingsBack: document.getElementById('settingsBack'),
@@ -79,6 +80,11 @@ const state = {
 const MAP_ZOOM = 16;
 const MAP_PX = 120; // canvas size for mini map
 
+// True when running inside the Capacitor native shell (iOS / Android).
+const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform());
+const CapGeo = isNative ? window.Capacitor.Plugins.Geolocation : null;
+const CapFS  = isNative ? window.Capacitor.Plugins.Filesystem  : null;
+
 function setStatus(msg) { els.status.textContent = msg; }
 
 /* ---------------- Settings (persisted) ---------------- */
@@ -94,6 +100,7 @@ const DEFAULT_SETTINGS = {
   logo: null,                // data URL string
   showLogo: false,
   lastProject: '',           // pre-fills the project field on the next capture
+  overlayPos: null,          // { x, y } px from top-left of camera view, null = default
 };
 
 let settings = loadSettings();
@@ -180,6 +187,19 @@ function stopCamera() {
 /* ---------------- Geolocation ---------------- */
 
 function startGeo() {
+  if (isNative) {
+    if (state.watchId !== null) CapGeo.clearWatch({ id: state.watchId });
+    CapGeo.watchPosition({ enableHighAccuracy: true }, (pos, err) => {
+      if (err) {
+        setStatus('location blocked');
+        els.ovAddress.textContent = 'Location unavailable';
+        console.error(err);
+      } else {
+        onPosition(pos);
+      }
+    }).then((id) => { state.watchId = id; });
+    return;
+  }
   if (!('geolocation' in navigator)) {
     els.ovAddress.textContent = 'Geolocation unsupported';
     return;
@@ -254,16 +274,130 @@ function weatherLabel(code) {
 }
 
 async function reverseGeocode(lat, lon) {
+  // On native iOS use Apple's CLGeocoder — accurate pincodes, no API key needed.
+  if (isNative && window.Capacitor.Plugins.NativeGeocoder) {
+    try {
+      const r = await window.Capacitor.Plugins.NativeGeocoder.reverseGeocode({
+        latitude: lat, longitude: lon,
+      });
+      const parts = [
+        r.thoroughfare,
+        r.subLocality,
+        r.locality || r.subAdministrativeArea,
+        r.administrativeArea,
+        r.postalCode,
+        r.country,
+      ].filter(Boolean).filter((p, i, arr) => p !== arr[i - 1]);
+      state.address = parts.join(', ') || null;
+      state.addressFor = { lat, lon };
+      return state.address;
+    } catch (err) {
+      console.warn('CLGeocoder failed, falling back to Nominatim', err);
+    }
+  }
+
+  // Web fallback: Nominatim for the address structure, then async postcode lookup.
   const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
   const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
   if (!res.ok) throw new Error('geocode ' + res.status);
   const data = await res.json();
-  const address = data.display_name || null;
-  // Remember which coordinate this address actually describes, so we never
-  // pair a fresh fix with a stale address from an earlier, drifted fix.
-  state.address = address;
+  const a = data.address || {};
+  const parts = [
+    a.road || a.pedestrian || a.footway,
+    a.neighbourhood || a.hamlet,
+    a.village || a.suburb,
+    a.city_district || a.county,
+    a.city || a.town || a.municipality,
+    a.state,
+    a.country,
+  ].filter(Boolean).filter((p, i, arr) => p !== arr[i - 1]);
+
+  state.address = parts.join(', ') || data.display_name || null;
   state.addressFor = { lat, lon };
-  return address;
+
+  // Postcode: Overpass first (tagged on buildings/roads), then validated Nominatim.
+  const nominatimPc = postcodeValidForState(a.postcode, a['ISO3166-2-lvl4'])
+    ? (a.postcode || null) : null;
+
+  const appendPostcode = (pc) => {
+    if (!pc || !state.addressFor) return;
+    if (Math.abs(state.addressFor.lat - lat) > 1e-5) return;
+    const before = parts.slice(0, -1);
+    const country = parts[parts.length - 1];
+    state.address = [...before, pc, country].filter(Boolean).join(', ');
+    renderOverlay();
+  };
+  fetchNearbyPostcode(lat, lon).then((pc) => appendPostcode(pc || nominatimPc))
+                               .catch(() => appendPostcode(nominatimPc));
+
+  return state.address;
+}
+
+// Query Overpass for the nearest feature that has an explicit addr:postcode tag.
+// These are set by local contributors on individual buildings/roads and are
+// independent of the administrative boundary polygons Nominatim uses.
+// Tries 300 m first; expands to 800 m on no result.
+async function fetchNearbyPostcode(lat, lon) {
+  for (const radius of [300, 800]) {
+    const q = `[out:json][timeout:8];`
+      + `(node(around:${radius},${lat},${lon})["addr:postcode"];`
+      + ` way(around:${radius},${lat},${lon})["addr:postcode"];);`
+      + `out 1;`;
+    try {
+      const res = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q),
+      });
+      if (!res.ok) continue;
+      const d = await res.json();
+      const pc = d.elements?.[0]?.tags?.['addr:postcode'];
+      if (pc) return pc;
+    } catch { /* try next radius */ }
+  }
+  return null;
+}
+
+// Known pincode prefix ranges per Indian state (ISO 3166-2 code).
+// Used to reject postcodes from misaligned OSM boundary polygons —
+// a common problem near state borders where a neighbouring state's
+// boundary overlaps and Nominatim returns the wrong postcode.
+const IN_STATE_PREFIXES = {
+  'IN-DL': [11],
+  'IN-HR': [12, 13],
+  'IN-PB': [14, 15, 16],
+  'IN-CH': [16],
+  'IN-HP': [17],
+  'IN-JK': [18, 19],
+  'IN-LA': [19],
+  'IN-UK': [24, 25],
+  'IN-UP': [20, 21, 22, 23, 24, 25, 26, 27, 28],
+  'IN-RJ': [30, 31, 32, 33, 34],
+  'IN-GJ': [36, 37, 38, 39],
+  'IN-MH': [40, 41, 42, 43, 44],
+  'IN-MP': [45, 46, 47, 48],
+  'IN-CG': [49],
+  'IN-AP': [50, 51, 52, 53],
+  'IN-TG': [50, 51, 52, 53],
+  'IN-KA': [56, 57, 58, 59],
+  'IN-TN': [60, 61, 62, 63, 64],
+  'IN-PY': [60, 67],
+  'IN-KL': [67, 68, 69],
+  'IN-OR': [75, 76, 77],
+  'IN-WB': [70, 71, 72, 73, 74],
+  'IN-BR': [80, 81, 82, 83, 84, 85],
+  'IN-JH': [81, 82, 83, 84, 85],
+  'IN-AS': [78],
+};
+
+// Returns true if postcode is plausible for the given ISO 3166-2 state code.
+// For non-Indian addresses (no stateCode in our map) we trust the postcode.
+function postcodeValidForState(postcode, stateCode) {
+  if (!postcode || !stateCode) return true;
+  const prefixes = IN_STATE_PREFIXES[stateCode];
+  if (!prefixes) return true; // not an Indian state we know — trust it
+  const twoDigit = Math.floor(parseInt(postcode, 10) / 10000);
+  return prefixes.includes(twoDigit);
 }
 
 function updateAddressFromFix(lat, lon) {
@@ -741,7 +875,7 @@ function showStage(stage) {
 
 function showResult() {
   showStage(els.resultView);
-  const canShare = !!(navigator.canShare && navigator.share);
+  const canShare = isNative || !!(navigator.canShare && navigator.share);
   els.shareBtn.classList.toggle('hidden', !canShare);
   setStatus('captured · add a remark or save');
 }
@@ -928,7 +1062,7 @@ function openLightbox(item) {
   lightboxUrl = URL.createObjectURL(item.blob);
   els.lightboxImg.src = lightboxUrl;
   els.lightbox.classList.remove('hidden');
-  els.lbShare.classList.toggle('hidden', !(navigator.canShare && navigator.share));
+  els.lbShare.classList.toggle('hidden', !isNative && !(navigator.canShare && navigator.share));
   els.lbShare.onclick = () => shareBlob(item.blob);
   els.lbDelete.onclick = async () => {
     await deleteCapture(item.id);
@@ -945,6 +1079,15 @@ function closeLightbox() {
 
 /* ---------------- Save / share ---------------- */
 
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 function downloadBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -956,11 +1099,24 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+async function saveNative(blob, name) {
+  const base64 = await blobToBase64(blob);
+  await CapFS.writeFile({ path: name, data: base64, directory: 'DOCUMENTS' });
+}
+
 async function shareBlob(blob) {
   const file = new File([blob], 'geotag.jpg', { type: 'image/jpeg' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: 'GeoTag Capture' });
+    } else if (isNative) {
+      // Write to cache then hand off to the OS share sheet via URL.
+      const base64 = await blobToBase64(blob);
+      const tmp = `geotag_share_${Date.now()}.jpg`;
+      const { uri } = await CapFS.writeFile({ path: tmp, data: base64, directory: 'CACHE' });
+      if (window.Capacitor.Plugins.Share) {
+        await window.Capacitor.Plugins.Share.share({ title: 'GeoTag Capture', url: uri });
+      }
     }
   } catch (err) { console.warn('share cancelled', err); }
 }
@@ -1081,11 +1237,20 @@ function parseTags(str) {
 els.saveBtn.addEventListener('click', async () => {
   if (!state.capture) return;
   setStatus('embedding GPS metadata…');
-  // Bake in the latest remark and embed real EXIF GPS before saving.
   const blob = await buildFinalBlob();
   await logCapture(blob);
-  downloadBlob(blob, `geotag_${state.capture.id}.jpg`);
-  setStatus('saved to log ✓ (with EXIF GPS)');
+  if (isNative) {
+    try {
+      await saveNative(blob, `geotag_${state.capture.id}.jpg`);
+      setStatus('saved to Files ✓ (with EXIF GPS)');
+    } catch (err) {
+      console.error('native save failed', err);
+      setStatus('save failed — try sharing instead');
+    }
+  } else {
+    downloadBlob(blob, `geotag_${state.capture.id}.jpg`);
+    setStatus('saved to log ✓ (with EXIF GPS)');
+  }
 });
 
 els.shareBtn.addEventListener('click', async () => {
@@ -1157,6 +1322,79 @@ async function exportGeoJson() {
   setStatus(`exported ${fc.features.length} points (GeoJSON)`);
 }
 
+/* ---------------- Draggable overlay (PiP) ---------------- */
+
+function initOverlayDrag() {
+  const el = els.overlay;
+
+  // Restore saved position.
+  if (settings.overlayPos) {
+    el.style.left   = settings.overlayPos.x + 'px';
+    el.style.top    = settings.overlayPos.y + 'px';
+    el.style.bottom = 'auto';
+    el.style.right  = 'auto';
+  }
+
+  let startPtrX, startPtrY, startElX, startElY, dragging = false;
+
+  function dragStart(clientX, clientY) {
+    const elRect    = el.getBoundingClientRect();
+    const stageRect = els.cameraView.getBoundingClientRect();
+    startPtrX = clientX;
+    startPtrY = clientY;
+    startElX  = elRect.left - stageRect.left;
+    startElY  = elRect.top  - stageRect.top;
+    dragging  = true;
+    el.classList.add('dragging');
+  }
+
+  function dragMove(clientX, clientY) {
+    if (!dragging) return;
+    const stageRect = els.cameraView.getBoundingClientRect();
+    const elRect    = el.getBoundingClientRect();
+    let x = startElX + (clientX - startPtrX);
+    let y = startElY + (clientY - startPtrY);
+    x = Math.max(8, Math.min(x, stageRect.width  - elRect.width  - 8));
+    y = Math.max(8, Math.min(y, stageRect.height - elRect.height - 8));
+    el.style.left   = x + 'px';
+    el.style.top    = y + 'px';
+    el.style.bottom = 'auto';
+    el.style.right  = 'auto';
+  }
+
+  function dragEnd() {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('dragging');
+    const elRect    = el.getBoundingClientRect();
+    const stageRect = els.cameraView.getBoundingClientRect();
+    settings.overlayPos = {
+      x: elRect.left - stageRect.left,
+      y: elRect.top  - stageRect.top,
+    };
+    saveSettings();
+  }
+
+  // Touch (iPhone / simulator touch injection)
+  el.addEventListener('touchstart', (e) => {
+    dragStart(e.touches[0].clientX, e.touches[0].clientY);
+    e.preventDefault();
+  }, { passive: false });
+  el.addEventListener('touchmove', (e) => {
+    dragMove(e.touches[0].clientX, e.touches[0].clientY);
+    e.preventDefault();
+  }, { passive: false });
+  el.addEventListener('touchend', dragEnd);
+
+  // Mouse (browser / macOS simulator)
+  el.addEventListener('mousedown', (e) => {
+    dragStart(e.clientX, e.clientY);
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => dragMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', dragEnd);
+}
+
 /* ---------------- Boot ---------------- */
 
 window.addEventListener('beforeunload', stopCamera);
@@ -1164,7 +1402,16 @@ window.addEventListener('beforeunload', stopCamera);
 (async function init() {
   loadLogoImage();
   applySettings();
+  initOverlayDrag();
   getAllCaptures().then(populateProjectControls).catch(() => {});
+  if (isNative) {
+    // Request camera + location permissions upfront so iOS shows the prompts
+    // before the user hits the shutter, not during capture.
+    await CapGeo.requestPermissions().catch(() => {});
+    if (window.Capacitor.Plugins.Camera) {
+      await window.Capacitor.Plugins.Camera.requestPermissions().catch(() => {});
+    }
+  }
   await startCamera();
   startGeo();
   if ('serviceWorker' in navigator) {
