@@ -69,22 +69,38 @@ main {
   object-fit: cover;
 }
 
-/* ---- Live overlay ---- */
+/* ---- Live overlay (draggable PiP) ---- */
 .overlay {
   position: absolute;
   left: 12px;
   bottom: 120px;
-  right: 12px;
+  width: calc(100% - 24px);
+  max-width: 340px;
   display: flex;
   gap: 10px;
   align-items: stretch;
-  padding: 10px;
+  padding: 14px 10px 10px;
   background: var(--panel);
   border-left: 4px solid var(--accent);
   border-radius: 10px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.overlay.dragging { cursor: grabbing; opacity: 0.88; }
+.overlay-handle {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 4px;
+  background: rgba(255,255,255,0.28);
+  border-radius: 2px;
 }
 .overlay-map canvas {
   width: 92px;
