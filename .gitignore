@@ -11,3 +11,6 @@ android/
 
 # Build output
 dist/
+
+# App Store assets (contains personal screenshots — keep local)
+appstore/
