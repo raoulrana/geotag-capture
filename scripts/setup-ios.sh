@@ -36,6 +36,13 @@ add_plist NSCameraUsageDescription      "GeoTag Capture uses the camera to take 
 add_plist NSLocationWhenInUseUsageDescription "GeoTag Capture stamps your location onto photos."
 add_plist NSPhotoLibraryAddUsageDescription   "GeoTag Capture saves geotagged photos to your library."
 
+echo "▶ Marking app exempt from export-compliance encryption docs (standard HTTPS only)…"
+/usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$PLIST" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST"
+
+echo "▶ Restricting target to iPhone-only (v1 ships without iPad support)…"
+sed -i '' 's/TARGETED_DEVICE_FAMILY = "1,2";/TARGETED_DEVICE_FAMILY = 1;/g' ios/App/App.xcodeproj/project.pbxproj
+
 echo "▶ Syncing web assets into the native project…"
 npx cap sync ios
 
