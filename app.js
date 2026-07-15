@@ -1,7 +1,7 @@
 'use strict';
 
 /* ----------------------------------------------------------------
-   GeoTag Capture — vanilla JS PWA
+   GeoTag Photo — vanilla JS PWA
    Stamps GPS coords, reverse-geocoded address, time, an optional
    remark, and a mini OSM map onto each captured photo.
 -----------------------------------------------------------------*/
@@ -851,7 +851,7 @@ async function buildFinalBlob() {
     speed: typeof c.geo.speed === 'number' ? c.geo.speed : undefined,
     heading: typeof c.geo.heading === 'number' ? c.geo.heading : undefined,
     date: c.date,
-    software: 'GeoTag Capture',
+    software: 'GeoTag Photo',
   });
 }
 
@@ -1108,14 +1108,14 @@ async function shareBlob(blob) {
   const file = new File([blob], 'geotag.jpg', { type: 'image/jpeg' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'GeoTag Capture' });
+      await navigator.share({ files: [file], title: 'GeoTag Photo' });
     } else if (isNative) {
       // Write to cache then hand off to the OS share sheet via URL.
       const base64 = await blobToBase64(blob);
       const tmp = `geotag_share_${Date.now()}.jpg`;
       const { uri } = await CapFS.writeFile({ path: tmp, data: base64, directory: 'CACHE' });
       if (window.Capacitor.Plugins.Share) {
-        await window.Capacitor.Plugins.Share.share({ title: 'GeoTag Capture', url: uri });
+        await window.Capacitor.Plugins.Share.share({ title: 'GeoTag Photo', url: uri });
       }
     }
   } catch (err) { console.warn('share cancelled', err); }

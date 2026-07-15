@@ -1,5 +1,5 @@
 {
-  "name": "GeoTag Capture",
+  "name": "GeoTag Photo",
   "short_name": "GeoTag",
   "description": "Capture photos with a GPS, address, time and map geotag stamped on top.",
   "start_url": "./index.html",
