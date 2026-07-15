@@ -1,4 +1,4 @@
-# 📍 GeoTag Capture
+# 📍 GeoTag Photo
 
 A dependency-free Progressive Web App that turns your phone (or laptop) into a
 geotagging camera. Every photo you capture gets a panel stamped onto it showing:

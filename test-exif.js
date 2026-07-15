@@ -5,7 +5,7 @@ const { buildExif } = require('./www/exif.js');
 (async () => {
   const date = new Date('2026-06-15T17:47:30Z');
   const data = { lat: 28.51707, lon: 77.19913, altitude: 216.5, speed: 0, heading: 90, date,
-                 software: 'GeoTag Capture' };
+                 software: 'GeoTag Photo' };
   const app1 = buildExif(data);
 
   // Minimal JPEG: SOI + our APP1 + a tiny scan + EOI.
@@ -26,7 +26,7 @@ const { buildExif } = require('./www/exif.js');
     ['GPSImgDirection', parsed.GPSImgDirection, data.heading, Math.abs(parsed.GPSImgDirection - data.heading) < 0.1],
     ['DateTimeOriginal', parsed.DateTimeOriginal, 'a Date', parsed.DateTimeOriginal instanceof Date],
     ['GPSDateStamp', parsed.GPSDateStamp, '2026:06:15', String(parsed.GPSDateStamp).startsWith('2026:06:15')],
-    ['Software', parsed.Software, 'GeoTag Capture', parsed.Software === 'GeoTag Capture'],
+    ['Software', parsed.Software, 'GeoTag Photo', parsed.Software === 'GeoTag Photo'],
   ];
 
   let ok = true;

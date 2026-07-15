@@ -1,6 +1,6 @@
 {
   "appId": "com.geotagcapture.app",
-  "appName": "GeoTag Capture",
+  "appName": "GeoTag Photo",
   "webDir": "www",
   "plugins": {
     "Geolocation": {},

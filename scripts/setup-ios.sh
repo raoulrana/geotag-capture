@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot iOS packaging for GeoTag Capture.
+# One-shot iOS packaging for GeoTag Photo.
 # Prerequisites: Xcode installed + its command-line tools selected.
 # Run from the project root:  bash scripts/setup-ios.sh
 set -euo pipefail
@@ -32,9 +32,10 @@ add_plist() { # key, value
   /usr/libexec/PlistBuddy -c "Delete :$1" "$PLIST" >/dev/null 2>&1 || true
   /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
 }
-add_plist NSCameraUsageDescription      "GeoTag Capture uses the camera to take geotagged photos."
-add_plist NSLocationWhenInUseUsageDescription "GeoTag Capture stamps your location onto photos."
-add_plist NSPhotoLibraryAddUsageDescription   "GeoTag Capture saves geotagged photos to your library."
+add_plist NSCameraUsageDescription      "GeoTag Photo uses the camera to take geotagged photos."
+add_plist NSLocationWhenInUseUsageDescription "GeoTag Photo stamps your location onto photos."
+add_plist NSPhotoLibraryAddUsageDescription   "GeoTag Photo saves geotagged photos to your library."
+add_plist NSPhotoLibraryUsageDescription      "GeoTag Photo saves geotagged photos to your library."
 
 echo "▶ Marking app exempt from export-compliance encryption docs (standard HTTPS only)…"
 /usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$PLIST" >/dev/null 2>&1 || true
@@ -58,7 +59,7 @@ cat <<'NEXT'
      or pick a Simulator.
   3. Press ▶ (Run). First run on a real device: on the iPhone go to
      Settings → General → VPN & Device Management → trust your developer cert.
-  4. Launch GeoTag Capture, allow Camera + Location when prompted.
+  4. Launch GeoTag Photo, allow Camera + Location when prompted.
 
 To push new web changes later:  npx cap sync ios   (then Run again)
 NEXT
